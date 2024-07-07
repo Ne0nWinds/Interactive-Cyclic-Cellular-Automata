@@ -270,31 +270,21 @@ void AppMain() {
     ID3D11Texture2D *Texture;
     ID3D11ShaderResourceView *TextureView = 0;
     {
-        u32 Width = 2;
-        u32 Height = 2;
+        u32 Width = WindowWidth;
+        u32 Height = WindowHeight;
 
         D3D11_TEXTURE2D_DESC Description = {
             .Width = Width,
             .Height = Height,
             .MipLevels = 1,
             .ArraySize = 1,
-            .Format = DXGI_FORMAT_R8G8B8A8_UNORM,
+            .Format = DXGI_FORMAT_R32_FLOAT,
             .SampleDesc = { 1, 0 },
             .Usage = D3D11_USAGE_DEFAULT,
-            .BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET
+            .BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET | D3D11_BIND_UNORDERED_ACCESS 
         };
 
-        u32 TestTexture[] = {
-            0xFFFFFFFF, 0,
-            0, 0xFFFFFFFF
-        };
-
-        D3D11_SUBRESOURCE_DATA Data = {
-            .pSysMem = TestTexture,
-            .SysMemPitch = Width * sizeof(u32)
-        };
-
-        ID3D11Device_CreateTexture2D(Device, &Description, &Data, &Texture);
+        ID3D11Device_CreateTexture2D(Device, &Description, NULL, &Texture);
         ID3D11Device_CreateShaderResourceView(Device, (ID3D11Resource *)Texture, NULL, &TextureView);
         // ID3D11Texture2D_Release(Texture);
     }
@@ -303,9 +293,9 @@ void AppMain() {
     {
         D3D11_SAMPLER_DESC SamplerDescription = {
             .Filter = D3D11_FILTER_MIN_MAG_MIP_POINT,
-            .AddressU = D3D11_TEXTURE_ADDRESS_WRAP,
-            .AddressV = D3D11_TEXTURE_ADDRESS_WRAP,
-            .AddressW = D3D11_TEXTURE_ADDRESS_WRAP,
+            .AddressU = D3D11_TEXTURE_ADDRESS_CLAMP,
+            .AddressV = D3D11_TEXTURE_ADDRESS_CLAMP,
+            .AddressW = D3D11_TEXTURE_ADDRESS_CLAMP,
             .MipLODBias = 0,
             .MaxAnisotropy = 1,
             .MinLOD = 0,
@@ -332,7 +322,7 @@ void AppMain() {
         ID3D11Device_CreateBlendState(Device, &BlendDescription, &BlendState);
     }
 
-    ID3D11RasterizerState *RasterizerState =0;
+    ID3D11RasterizerState *RasterizerState = 0;
     {
         D3D11_RASTERIZER_DESC Description =
         {
@@ -399,6 +389,9 @@ void AppMain() {
         .MaxDepth = 1,
     };
 
+    ID3D11UnorderedAccessView *UnorderedAccessView;
+    ID3D11Device_CreateUnorderedAccessView(Device, (ID3D11Resource *)Texture, NULL, &UnorderedAccessView);
+
     while (!WindowShouldClose()) {
         // OnRender();
         
@@ -412,6 +405,14 @@ void AppMain() {
         UINT Stride = sizeof(f32) * 4;
         UINT Offset = 0;
         ID3D11DeviceContext_IASetVertexBuffers(DeviceContext, 0, 1, &VertexBuffer, &Stride, &Offset);
+
+        // Compute Shader
+        ID3D11DeviceContext_CSSetShader(DeviceContext, ComputeShader, NULL, 0);
+        ID3D11DeviceContext_CSSetUnorderedAccessViews(DeviceContext, 0, 1, &UnorderedAccessView, NULL);
+        ID3D11DeviceContext_Dispatch(DeviceContext, WindowWidth / 32, WindowHeight / 32, 1);
+        static ID3D11UnorderedAccessView NullUSRV[] = { 0 };
+        ID3D11DeviceContext_CSSetUnorderedAccessViews(DeviceContext, 0, 1, (ID3D11UnorderedAccessView **)NullUSRV, NULL);
+        ID3D11DeviceContext_CSSetShader(DeviceContext, NULL, NULL, 0);
 
         // Vertex Shader
         // ID3D11DeviceContext_VSSetConstantBuffers(DeviceContext, 0, 1, &ConstantBuffer);
@@ -435,6 +436,8 @@ void AppMain() {
         ID3D11DeviceContext_Draw(DeviceContext, 6, 0);
 
         IDXGISwapChain1_Present(SwapChain, 0, 0);
+        static ID3D11ShaderResourceView NullSRV[] = { 0 };
+        ID3D11DeviceContext_PSSetShaderResources(DeviceContext, 0, 1, (ID3D11ShaderResourceView**)NullSRV);
     }
 
 

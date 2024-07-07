@@ -3,8 +3,8 @@
 #include "os.h"
 
 void OnInit(init_params *InitParams) {
-    InitParams->WindowWidth = 720;
-    InitParams->WindowHeight = 720;
+    InitParams->WindowWidth = 640;
+    InitParams->WindowHeight = 640;
 }
 
 void OnRender() {
