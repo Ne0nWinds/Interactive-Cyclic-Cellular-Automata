@@ -240,7 +240,8 @@ void AppMain() {
     ID3D11InputLayout *Layout;
     ID3D11VertexShader *VertexShader = 0;
     ID3D11PixelShader *PixelShader = 0;
-    ID3D11ComputeShader *ComputeShader = 0;
+    ID3D11ComputeShader *CCAShader = 0;
+    ID3D11ComputeShader *RNGShader = 0;
 
     {
         D3D11_INPUT_ELEMENT_DESC Description[] = {
@@ -263,12 +264,24 @@ void AppMain() {
     {
         memory_arena FileArena = ArenaScratch(&TempArena);
         buffer ByteCode = FileRead(&FileArena, "cca.compute.cso");
-        ID3D11Device_CreateComputeShader(Device, ByteCode.Data, ByteCode.Size, NULL, &ComputeShader);
-        Assert(ComputeShader != 0);
+        ID3D11Device_CreateComputeShader(Device, ByteCode.Data, ByteCode.Size, NULL, &CCAShader);
+        Assert(CCAShader != 0);
     }
 
-    ID3D11Texture2D *Texture;
-    ID3D11ShaderResourceView *TextureView = 0;
+    {
+        memory_arena FileArena = ArenaScratch(&TempArena);
+        buffer ByteCode = FileRead(&FileArena, "rng.compute.cso");
+        ID3D11Device_CreateComputeShader(Device, ByteCode.Data, ByteCode.Size, NULL, &RNGShader);
+        Assert(RNGShader != 0);
+    }
+
+    typedef struct {
+        ID3D11Texture2D *Texture;
+        ID3D11ShaderResourceView *ResourceView;
+        ID3D11UnorderedAccessView *UAV;
+    } RWTexture;
+
+    RWTexture Textures[2] = {0};
     {
         u32 Width = WindowWidth;
         u32 Height = WindowHeight;
@@ -284,8 +297,11 @@ void AppMain() {
             .BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET | D3D11_BIND_UNORDERED_ACCESS 
         };
 
-        ID3D11Device_CreateTexture2D(Device, &Description, NULL, &Texture);
-        ID3D11Device_CreateShaderResourceView(Device, (ID3D11Resource *)Texture, NULL, &TextureView);
+        ID3D11Device_CreateTexture2D(Device, &Description, NULL, &Textures[0].Texture);
+        ID3D11Device_CreateShaderResourceView(Device, (ID3D11Resource *)Textures[0].Texture, NULL, &Textures[0].ResourceView);
+
+        ID3D11Device_CreateTexture2D(Device, &Description, NULL, &Textures[1].Texture);
+        ID3D11Device_CreateShaderResourceView(Device, (ID3D11Resource *)Textures[1].Texture, NULL, &Textures[1].ResourceView);
         // ID3D11Texture2D_Release(Texture);
     }
 
@@ -389,8 +405,21 @@ void AppMain() {
         .MaxDepth = 1,
     };
 
-    ID3D11UnorderedAccessView *UnorderedAccessView;
-    ID3D11Device_CreateUnorderedAccessView(Device, (ID3D11Resource *)Texture, NULL, &UnorderedAccessView);
+    ID3D11Device_CreateUnorderedAccessView(Device, (ID3D11Resource *)Textures[0].Texture, NULL, &Textures[0].UAV);
+    ID3D11Device_CreateUnorderedAccessView(Device, (ID3D11Resource *)Textures[1].Texture, NULL, &Textures[1].UAV);
+
+    bool TextureSwap = false;
+
+    {
+        // Initialize
+        ID3D11DeviceContext_CSSetShader(DeviceContext, RNGShader, NULL, 0);
+        ID3D11DeviceContext_CSSetUnorderedAccessViews(DeviceContext, 0, 1, &Textures[TextureSwap].UAV, NULL);
+        ID3D11DeviceContext_Dispatch(DeviceContext, WindowWidth / 32, WindowHeight / 32, 1);
+        ID3D11UnorderedAccessView *NullUSRV[] = { 0 };
+        ID3D11DeviceContext_CSSetUnorderedAccessViews(DeviceContext, 0, 1, NullUSRV, NULL);
+        ID3D11DeviceContext_CSSetShader(DeviceContext, NULL, NULL, 0);
+
+    }
 
     while (!WindowShouldClose()) {
         // OnRender();
@@ -407,11 +436,12 @@ void AppMain() {
         ID3D11DeviceContext_IASetVertexBuffers(DeviceContext, 0, 1, &VertexBuffer, &Stride, &Offset);
 
         // Compute Shader
-        ID3D11DeviceContext_CSSetShader(DeviceContext, ComputeShader, NULL, 0);
-        ID3D11DeviceContext_CSSetUnorderedAccessViews(DeviceContext, 0, 1, &UnorderedAccessView, NULL);
+        ID3D11DeviceContext_CSSetShader(DeviceContext, CCAShader, NULL, 0);
+        ID3D11DeviceContext_CSSetUnorderedAccessViews(DeviceContext, 0, 1, &Textures[TextureSwap].UAV, NULL);
+        ID3D11DeviceContext_CSSetUnorderedAccessViews(DeviceContext, 1, 1, &Textures[!TextureSwap].UAV, NULL);
         ID3D11DeviceContext_Dispatch(DeviceContext, WindowWidth / 32, WindowHeight / 32, 1);
-        static ID3D11UnorderedAccessView NullUSRV[] = { 0 };
-        ID3D11DeviceContext_CSSetUnorderedAccessViews(DeviceContext, 0, 1, (ID3D11UnorderedAccessView **)NullUSRV, NULL);
+        static ID3D11UnorderedAccessView *NullUSRV[] = { 0, 0 };
+        ID3D11DeviceContext_CSSetUnorderedAccessViews(DeviceContext, 0, 2, NullUSRV, NULL);
         ID3D11DeviceContext_CSSetShader(DeviceContext, NULL, NULL, 0);
 
         // Vertex Shader
@@ -424,7 +454,7 @@ void AppMain() {
 
         // Pixel Shader
         ID3D11DeviceContext_PSSetSamplers(DeviceContext, 0, 1, &SamplerState);
-        ID3D11DeviceContext_PSSetShaderResources(DeviceContext, 0, 1, &TextureView);
+        ID3D11DeviceContext_PSSetShaderResources(DeviceContext, 0, 1, &Textures[!TextureSwap].ResourceView);
         ID3D11DeviceContext_PSSetShader(DeviceContext, PixelShader, NULL, 0);
 
         // Output Merger
@@ -438,8 +468,10 @@ void AppMain() {
         IDXGISwapChain1_Present(SwapChain, 0, 0);
         static ID3D11ShaderResourceView NullSRV[] = { 0 };
         ID3D11DeviceContext_PSSetShaderResources(DeviceContext, 0, 1, (ID3D11ShaderResourceView**)NullSRV);
-    }
 
+        TextureSwap = !TextureSwap;
+        Sleep(30);
+    }
 
     ExitProcess(0);
 }

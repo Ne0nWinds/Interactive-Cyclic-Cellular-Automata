@@ -20,6 +20,7 @@ static inline u64 RoundUp64(u64 Value, u64 PowerOf2) {
 	return Value;
 }
 
+/* == Vector Math == */
 #if defined(CPU_X64)
 
 #include <immintrin.h>
