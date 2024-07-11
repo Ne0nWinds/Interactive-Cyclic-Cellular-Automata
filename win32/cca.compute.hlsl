@@ -5,6 +5,8 @@ cbuffer Constants : register(b0)
     uint Threshold;
     uint Search;
     uint UseNeumannSearch;
+    int MousePosX;
+    int MousePosY;
 };
 
 RWTexture2D<float> readTexture : register(u0);
@@ -47,9 +49,15 @@ void main(uint3 dispatchID : SV_DispatchThreadID) {
         }
     }
 
+    uint final_result = current_state;
+
     if (search_results_found >= threshold) {
-        writeTexture[dispatchID.xy] = float(next_state % states);
-    } else {
-        writeTexture[dispatchID.xy] = float(current_state);
+        final_result += 1;
     }
+    float2 Mouse = float2(MousePosX, MousePosY);
+    if (abs(Mouse.x - dispatchID.x) + abs(Mouse.y - dispatchID.y) < 75.0) {
+        final_result += 1;
+    }
+
+    writeTexture[dispatchID.xy] = float(final_result % States);
 }

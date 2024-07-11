@@ -5,6 +5,8 @@ cbuffer Constants : register(b0)
     uint Threshold;
     uint Search;
     uint UseNeummanSearch;
+    int MousePosX;
+    int MousePosY;
 };
 
 RWTexture2D<float> writeTexture : register(u0);
@@ -20,4 +22,5 @@ float random(float2 n) {
 void main(uint3 dispatchID : SV_DispatchThreadID) {
     const float states = float(States);
     writeTexture[dispatchID.xy] = floor(random(dispatchID.xy + 1024.9823) * states);
+    // writeTexture[dispatchID.xy] = 0.0;
 }

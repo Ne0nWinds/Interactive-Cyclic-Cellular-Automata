@@ -20,12 +20,18 @@ float4 RGBA(float R, float G, float B, float A) {
 }
 
 float4 main(float2 uv : TexCoord) : SV_Target {
-    float textureSample = tex.Sample(textureSampler, uv).x / States;
+    float textureSample = floor(tex.Sample(textureSampler, uv).x);
     float4 result = 0.0;
-    if (textureSample > 0.01) {
-        result = RGBA(52, 46, 55, 1);
+#if 1
+    if (textureSample < 0.01) {
+        result = RGBA(214, 41, 41, 1);
+    // } else if (textureSample < 1.01) {
+    //     result = RGBA(54, 214, 227, 1);
     } else {
-        result = RGBA(162, 215, 41, 1);
+        result = RGBA(52, 46, 55, 1);
     }
+#else
+    result = textureSample / States;
+#endif
     return result;
 }

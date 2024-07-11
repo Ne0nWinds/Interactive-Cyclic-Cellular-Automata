@@ -12,6 +12,9 @@
 #include <d3dcompiler.h>
 #include <dxgidebug.h>
 
+#define GET_X_LPARAM(lp)                        ((int)(short)LOWORD(lp))
+#define GET_Y_LPARAM(lp)                        ((int)(short)HIWORD(lp))
+
 #pragma comment (lib, "kernel32")
 #pragma comment (lib, "gdi32")
 #pragma comment (lib, "user32")
@@ -28,6 +31,9 @@ static memory_arena TempArena = {0};
 static HWND WindowHandle;
 bool ShouldWindowClose = false;
 static u32 WindowWidth = 1280, WindowHeight = 720;
+
+static s32 MousePositionX = -1024, MousePositionY = -1024;
+bool MouseDown;
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
@@ -416,10 +422,15 @@ void AppMain() {
         u32 Threshold;
         u32 Search;
         u32 UseNeummanSearch;
+
+        s32 MousePositionX;
+        s32 MousePositionY;
+        u64 Padding;
     } constant_buffer;
 
     static constant_buffer ConstantBuffer;
     ID3D11Buffer *D3D11ConstantBuffer = NULL;
+    ID3D11Buffer *NullConstantBuffer = NULL;
     {
         ConstantBuffer.States = 15;
         ConstantBuffer.Threshold = 1;
@@ -439,23 +450,37 @@ void AppMain() {
         HR = ID3D11Device_CreateBuffer(Device, &ConstantBufferDescription, &InitialData, &D3D11ConstantBuffer);
         Assert(SUCCEEDED(HR));
     }
-    ID3D11DeviceContext_CSSetConstantBuffers(DeviceContext, 0, 1, &D3D11ConstantBuffer);
     ID3D11DeviceContext_PSSetConstantBuffers(DeviceContext, 0, 1, &D3D11ConstantBuffer);
 
     {
         // Initialize
         ID3D11DeviceContext_CSSetShader(DeviceContext, RNGShader, NULL, 0);
+        ID3D11DeviceContext_CSSetConstantBuffers(DeviceContext, 0, 1, &D3D11ConstantBuffer);
         ID3D11DeviceContext_CSSetUnorderedAccessViews(DeviceContext, 0, 1, &Textures[TextureSwap].UAV, NULL);
         ID3D11DeviceContext_Dispatch(DeviceContext, WindowWidth / 32, WindowHeight / 32, 1);
         ID3D11UnorderedAccessView *NullUSRV[] = { 0 };
         ID3D11DeviceContext_CSSetUnorderedAccessViews(DeviceContext, 0, 1, NullUSRV, NULL);
         ID3D11DeviceContext_CSSetShader(DeviceContext, NULL, NULL, 0);
+        ID3D11DeviceContext_CSSetConstantBuffers(DeviceContext, 0, 1, &NullConstantBuffer);
     }
 
 
     while (!WindowShouldClose()) {
         // OnRender();
         
+        {
+            D3D11_MAPPED_SUBRESOURCE SubResource = {0};
+            ID3D11DeviceContext_Map(DeviceContext, (ID3D11Resource *)D3D11ConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &SubResource);
+            constant_buffer *CBuffer = (constant_buffer *)SubResource.pData;
+            CBuffer->MousePositionX = (MouseDown) ? MousePositionX : -1024;
+            CBuffer->MousePositionY = (MouseDown) ? MousePositionY : -1024;
+            CBuffer->States = 15;
+            CBuffer->Threshold = 1;
+            CBuffer->Search = 1;
+            CBuffer->UseNeummanSearch = 1;
+            ID3D11DeviceContext_Unmap(DeviceContext, (ID3D11Resource *)D3D11ConstantBuffer, 0);
+        }
+
         FLOAT ClearColor[] = { 0.0f, 0.0f, 0.0f, 1.0f };
         ID3D11DeviceContext_ClearRenderTargetView(DeviceContext, RenderTargetView, ClearColor);
         ID3D11DeviceContext_ClearDepthStencilView(DeviceContext, DepthStencilView, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0, 0.0);
@@ -469,11 +494,13 @@ void AppMain() {
 
         // Compute Shader
         ID3D11DeviceContext_CSSetShader(DeviceContext, CCAShader, NULL, 0);
+        ID3D11DeviceContext_CSSetConstantBuffers(DeviceContext, 0, 1, &D3D11ConstantBuffer);
         ID3D11DeviceContext_CSSetUnorderedAccessViews(DeviceContext, 0, 1, &Textures[TextureSwap].UAV, NULL);
         ID3D11DeviceContext_CSSetUnorderedAccessViews(DeviceContext, 1, 1, &Textures[!TextureSwap].UAV, NULL);
         ID3D11DeviceContext_Dispatch(DeviceContext, WindowWidth / 32, WindowHeight / 32, 1);
         static ID3D11UnorderedAccessView *NullUSRV[] = { 0, 0 };
         ID3D11DeviceContext_CSSetUnorderedAccessViews(DeviceContext, 0, 2, NullUSRV, NULL);
+        ID3D11DeviceContext_CSSetConstantBuffers(DeviceContext, 0, 1, &NullConstantBuffer);
         ID3D11DeviceContext_CSSetShader(DeviceContext, NULL, NULL, 0);
 
         // Vertex Shader
@@ -497,7 +524,7 @@ void AppMain() {
         // Draw
         ID3D11DeviceContext_Draw(DeviceContext, 6, 0);
 
-        IDXGISwapChain1_Present(SwapChain, 3, 0);
+        IDXGISwapChain1_Present(SwapChain, 2, 0);
         static ID3D11ShaderResourceView NullSRV[] = { 0 };
         ID3D11DeviceContext_PSSetShaderResources(DeviceContext, 0, 1, (ID3D11ShaderResourceView**)NullSRV);
 
@@ -521,6 +548,19 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             UINT NewHeight = HIWORD(lParam);
             WindowWidth = NewWidth;
             WindowHeight = NewHeight;
+            return 0;
+        }
+        case WM_LBUTTONDOWN:
+        case WM_LBUTTONUP: {
+            MouseDown = uMsg == WM_LBUTTONDOWN;
+            // MouseDown = true;
+            MousePositionX = GET_X_LPARAM(lParam);
+            MousePositionY = WindowHeight - GET_Y_LPARAM(lParam);
+            return 0;
+        }
+        case WM_MOUSEMOVE: {
+            MousePositionX = GET_X_LPARAM(lParam);
+            MousePositionY = WindowHeight - GET_Y_LPARAM(lParam);
             return 0;
         }
     }
