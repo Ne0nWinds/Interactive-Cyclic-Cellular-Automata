@@ -470,7 +470,7 @@ void AppMain() {
         ID3D11DeviceContext_PSSetShaderResources(DeviceContext, 0, 1, (ID3D11ShaderResourceView**)NullSRV);
 
         TextureSwap = !TextureSwap;
-        Sleep(30);
+        Sleep(16);
     }
 
     ExitProcess(0);
