@@ -60,6 +60,7 @@ static buffer FileRead(memory_arena *Arena, const char *Path) {
     Assert(ReadResult);
     (void)ReadResult;
 
+    CloseHandle(FileHandle);
     buffer Result = {
         .Data = Buffer,
         .Size = FileSize.LowPart
@@ -410,6 +411,37 @@ void AppMain() {
 
     bool TextureSwap = false;
 
+    typedef struct {
+        u32 States;
+        u32 Threshold;
+        u32 Search;
+        u32 UseNeummanSearch;
+    } constant_buffer;
+
+    static constant_buffer ConstantBuffer;
+    ID3D11Buffer *D3D11ConstantBuffer = NULL;
+    {
+        ConstantBuffer.States = 15;
+        ConstantBuffer.Threshold = 1;
+        ConstantBuffer.Search = 1;
+        ConstantBuffer.UseNeummanSearch = 1;
+
+        D3D11_BUFFER_DESC ConstantBufferDescription = {
+            .ByteWidth = sizeof(constant_buffer),
+            .Usage = D3D11_USAGE_DYNAMIC,
+            .BindFlags = D3D11_BIND_CONSTANT_BUFFER,
+            .CPUAccessFlags = D3D11_CPU_ACCESS_WRITE,
+            .MiscFlags = 0,
+            .StructureByteStride = 0
+        };
+
+        D3D11_SUBRESOURCE_DATA InitialData = { .pSysMem = &ConstantBuffer };
+        HR = ID3D11Device_CreateBuffer(Device, &ConstantBufferDescription, &InitialData, &D3D11ConstantBuffer);
+        Assert(SUCCEEDED(HR));
+    }
+    ID3D11DeviceContext_CSSetConstantBuffers(DeviceContext, 0, 1, &D3D11ConstantBuffer);
+    ID3D11DeviceContext_PSSetConstantBuffers(DeviceContext, 0, 1, &D3D11ConstantBuffer);
+
     {
         // Initialize
         ID3D11DeviceContext_CSSetShader(DeviceContext, RNGShader, NULL, 0);
@@ -418,8 +450,8 @@ void AppMain() {
         ID3D11UnorderedAccessView *NullUSRV[] = { 0 };
         ID3D11DeviceContext_CSSetUnorderedAccessViews(DeviceContext, 0, 1, NullUSRV, NULL);
         ID3D11DeviceContext_CSSetShader(DeviceContext, NULL, NULL, 0);
-
     }
+
 
     while (!WindowShouldClose()) {
         // OnRender();
@@ -465,12 +497,12 @@ void AppMain() {
         // Draw
         ID3D11DeviceContext_Draw(DeviceContext, 6, 0);
 
-        IDXGISwapChain1_Present(SwapChain, 0, 0);
+        IDXGISwapChain1_Present(SwapChain, 3, 0);
         static ID3D11ShaderResourceView NullSRV[] = { 0 };
         ID3D11DeviceContext_PSSetShaderResources(DeviceContext, 0, 1, (ID3D11ShaderResourceView**)NullSRV);
 
         TextureSwap = !TextureSwap;
-        Sleep(16);
+        // Sleep(0);
     }
 
     ExitProcess(0);
