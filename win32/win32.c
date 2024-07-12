@@ -2,6 +2,7 @@
 #include "..\base.h"
 #include "..\os.h"
 #include "..\math.h"
+#include "cca_flags.h"
 
 #define COBJMACROS
 #define WIN32_LEAN_AND_MEAN
@@ -29,7 +30,9 @@ static LARGE_INTEGER PerformanceFrequency;
 static memory_arena TempArena = {0};
 
 static HWND WindowHandle;
-bool ShouldWindowClose = false;
+static bool ShouldWindowClose = false;
+static bool ResetCCAState = true;
+static bool Paused = false;
 static u32 WindowWidth = 1280, WindowHeight = 720;
 
 static s32 MousePositionX = -1024, MousePositionY = -1024;
@@ -316,9 +319,9 @@ void AppMain() {
     {
         D3D11_SAMPLER_DESC SamplerDescription = {
             .Filter = D3D11_FILTER_MIN_MAG_MIP_POINT,
-            .AddressU = D3D11_TEXTURE_ADDRESS_CLAMP,
-            .AddressV = D3D11_TEXTURE_ADDRESS_CLAMP,
-            .AddressW = D3D11_TEXTURE_ADDRESS_CLAMP,
+            .AddressU = D3D11_TEXTURE_ADDRESS_WRAP,
+            .AddressV = D3D11_TEXTURE_ADDRESS_WRAP,
+            .AddressW = D3D11_TEXTURE_ADDRESS_WRAP,
             .MipLODBias = 0,
             .MaxAnisotropy = 1,
             .MinLOD = 0,
@@ -421,22 +424,16 @@ void AppMain() {
         u32 States;
         u32 Threshold;
         u32 Search;
-        u32 UseNeummanSearch;
+        u32 Flags;
 
         s32 MousePositionX;
         s32 MousePositionY;
         u64 Padding;
     } constant_buffer;
 
-    static constant_buffer ConstantBuffer;
     ID3D11Buffer *D3D11ConstantBuffer = NULL;
     ID3D11Buffer *NullConstantBuffer = NULL;
     {
-        ConstantBuffer.States = 15;
-        ConstantBuffer.Threshold = 1;
-        ConstantBuffer.Search = 1;
-        ConstantBuffer.UseNeummanSearch = 1;
-
         D3D11_BUFFER_DESC ConstantBufferDescription = {
             .ByteWidth = sizeof(constant_buffer),
             .Usage = D3D11_USAGE_DYNAMIC,
@@ -446,22 +443,13 @@ void AppMain() {
             .StructureByteStride = 0
         };
 
-        D3D11_SUBRESOURCE_DATA InitialData = { .pSysMem = &ConstantBuffer };
-        HR = ID3D11Device_CreateBuffer(Device, &ConstantBufferDescription, &InitialData, &D3D11ConstantBuffer);
+        HR = ID3D11Device_CreateBuffer(Device, &ConstantBufferDescription, NULL, &D3D11ConstantBuffer);
         Assert(SUCCEEDED(HR));
     }
     ID3D11DeviceContext_PSSetConstantBuffers(DeviceContext, 0, 1, &D3D11ConstantBuffer);
 
     {
         // Initialize
-        ID3D11DeviceContext_CSSetShader(DeviceContext, RNGShader, NULL, 0);
-        ID3D11DeviceContext_CSSetConstantBuffers(DeviceContext, 0, 1, &D3D11ConstantBuffer);
-        ID3D11DeviceContext_CSSetUnorderedAccessViews(DeviceContext, 0, 1, &Textures[TextureSwap].UAV, NULL);
-        ID3D11DeviceContext_Dispatch(DeviceContext, WindowWidth / 32, WindowHeight / 32, 1);
-        ID3D11UnorderedAccessView *NullUSRV[] = { 0 };
-        ID3D11DeviceContext_CSSetUnorderedAccessViews(DeviceContext, 0, 1, NullUSRV, NULL);
-        ID3D11DeviceContext_CSSetShader(DeviceContext, NULL, NULL, 0);
-        ID3D11DeviceContext_CSSetConstantBuffers(DeviceContext, 0, 1, &NullConstantBuffer);
     }
 
 
@@ -474,13 +462,27 @@ void AppMain() {
             constant_buffer *CBuffer = (constant_buffer *)SubResource.pData;
             CBuffer->MousePositionX = (MouseDown) ? MousePositionX : -1024;
             CBuffer->MousePositionY = (MouseDown) ? MousePositionY : -1024;
-            CBuffer->States = 15;
+            CBuffer->States = 20;
             CBuffer->Threshold = 1;
             CBuffer->Search = 1;
-            CBuffer->UseNeummanSearch = 1;
+            CBuffer->Flags = 0;
+            CBuffer->Flags |= (Paused) ? CCA_PAUSED : 0;
+            CBuffer->Flags |= (false) ? CCA_NEUMANN_SEARCH : 0;
             ID3D11DeviceContext_Unmap(DeviceContext, (ID3D11Resource *)D3D11ConstantBuffer, 0);
         }
 
+        if (ResetCCAState) {
+            ID3D11DeviceContext_CSSetShader(DeviceContext, RNGShader, NULL, 0);
+            ID3D11DeviceContext_CSSetConstantBuffers(DeviceContext, 0, 1, &D3D11ConstantBuffer);
+            ID3D11DeviceContext_CSSetUnorderedAccessViews(DeviceContext, 0, 1, &Textures[TextureSwap].UAV, NULL);
+            ID3D11DeviceContext_Dispatch(DeviceContext, WindowWidth / 32, WindowHeight / 32, 1);
+            ID3D11UnorderedAccessView *NullUSRV[] = { 0 };
+            ID3D11DeviceContext_CSSetUnorderedAccessViews(DeviceContext, 0, 1, NullUSRV, NULL);
+            ID3D11DeviceContext_CSSetShader(DeviceContext, NULL, NULL, 0);
+            ID3D11DeviceContext_CSSetConstantBuffers(DeviceContext, 0, 1, &NullConstantBuffer);
+            ResetCCAState = false;
+        }
+        
         FLOAT ClearColor[] = { 0.0f, 0.0f, 0.0f, 1.0f };
         ID3D11DeviceContext_ClearRenderTargetView(DeviceContext, RenderTargetView, ClearColor);
         ID3D11DeviceContext_ClearDepthStencilView(DeviceContext, DepthStencilView, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0, 0.0);
@@ -561,6 +563,15 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         case WM_MOUSEMOVE: {
             MousePositionX = GET_X_LPARAM(lParam);
             MousePositionY = WindowHeight - GET_Y_LPARAM(lParam);
+            return 0;
+        }
+        case WM_KEYUP: {
+            if (wParam == 'R') {
+                ResetCCAState = true;
+            }
+            if (wParam == VK_SPACE) {
+                Paused = !Paused;
+            }
             return 0;
         }
     }
