@@ -22,7 +22,7 @@ float4 RGBA(float R, float G, float B, float A) {
 float4 main(float2 uv : TexCoord) : SV_Target {
     float textureSample = floor(tex.Sample(textureSampler, uv).x);
     float4 result = 0.0;
-#if 1
+#if 0
     if (textureSample < 0.01) {
         result = RGBA(214, 41, 41, 1);
     // } else if (textureSample < 1.01) {

@@ -428,7 +428,9 @@ void AppMain() {
 
         s32 MousePositionX;
         s32 MousePositionY;
-        u64 Padding;
+        f32 TimeElapsed;
+
+        u32 Padding;
     } constant_buffer;
 
     ID3D11Buffer *D3D11ConstantBuffer = NULL;
@@ -448,13 +450,23 @@ void AppMain() {
     }
     ID3D11DeviceContext_PSSetConstantBuffers(DeviceContext, 0, 1, &D3D11ConstantBuffer);
 
+    u64 FirstCounter;
     {
-        // Initialize
+        LARGE_INTEGER Counter;
+        QueryPerformanceCounter(&Counter);
+        FirstCounter = Counter.QuadPart;
     }
-
 
     while (!WindowShouldClose()) {
         // OnRender();
+        
+        static f64 Time = 0.0;
+        {
+            LARGE_INTEGER Counter;
+            QueryPerformanceCounter(&Counter);
+            f64 TimeElapsed = Counter.QuadPart - FirstCounter;
+            Time = TimeElapsed / (f64)PerformanceFrequency.QuadPart;
+        }
         
         {
             D3D11_MAPPED_SUBRESOURCE SubResource = {0};
@@ -462,12 +474,14 @@ void AppMain() {
             constant_buffer *CBuffer = (constant_buffer *)SubResource.pData;
             CBuffer->MousePositionX = (MouseDown) ? MousePositionX : -1024;
             CBuffer->MousePositionY = (MouseDown) ? MousePositionY : -1024;
-            CBuffer->States = 20;
+            CBuffer->States = 15;
             CBuffer->Threshold = 1;
-            CBuffer->Search = 1;
+            CBuffer->Search = 2;
             CBuffer->Flags = 0;
             CBuffer->Flags |= (Paused) ? CCA_PAUSED : 0;
+            CBuffer->Flags |= (true) ? CCA_RANDOM_SEARCH : 0;
             CBuffer->Flags |= (false) ? CCA_NEUMANN_SEARCH : 0;
+            CBuffer->TimeElapsed = (f32)Time;
             ID3D11DeviceContext_Unmap(DeviceContext, (ID3D11Resource *)D3D11ConstantBuffer, 0);
         }
 
