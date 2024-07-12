@@ -474,13 +474,13 @@ void AppMain() {
             constant_buffer *CBuffer = (constant_buffer *)SubResource.pData;
             CBuffer->MousePositionX = (MouseDown) ? MousePositionX : -1024;
             CBuffer->MousePositionY = (MouseDown) ? MousePositionY : -1024;
-            CBuffer->States = 15;
-            CBuffer->Threshold = 1;
+            CBuffer->States = 9;
+            CBuffer->Threshold = 2;
             CBuffer->Search = 2;
             CBuffer->Flags = 0;
             CBuffer->Flags |= (Paused) ? CCA_PAUSED : 0;
-            CBuffer->Flags |= (true) ? CCA_RANDOM_SEARCH : 0;
-            CBuffer->Flags |= (false) ? CCA_NEUMANN_SEARCH : 0;
+            CBuffer->Flags |= (false) ? CCA_RANDOM_SEARCH : 0;
+            CBuffer->Flags |= (true) ? CCA_NEUMANN_SEARCH : 0;
             CBuffer->TimeElapsed = (f32)Time;
             ID3D11DeviceContext_Unmap(DeviceContext, (ID3D11Resource *)D3D11ConstantBuffer, 0);
         }
@@ -540,7 +540,7 @@ void AppMain() {
         // Draw
         ID3D11DeviceContext_Draw(DeviceContext, 6, 0);
 
-        IDXGISwapChain1_Present(SwapChain, 2, 0);
+        IDXGISwapChain1_Present(SwapChain, 4, 0);
         static ID3D11ShaderResourceView NullSRV[] = { 0 };
         ID3D11DeviceContext_PSSetShaderResources(DeviceContext, 0, 1, (ID3D11ShaderResourceView**)NullSRV);
 

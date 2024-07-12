@@ -17,7 +17,7 @@ RWTexture2D<float> readTexture : register(u0);
 RWTexture2D<float> writeTexture : register(u1);
 
 float random(float n) {
-    return frac(cos(n * 3816.51901827394810948) * 10892.31881923968742);
+    return frac(cos(n * 3816.51901827394810948) * 1892.31881923968742);
 }
 
 [numthreads(32,32,1)]
@@ -39,7 +39,7 @@ void main(uint3 dispatchID : SV_DispatchThreadID) {
             int range = search * 2;
             for (int i = 0; i < search; ++i) {
                 int x = int(round((random(dispatchID.x + TimeElapsed + i * 108.81393832) - 0.5) * range));
-                int y = int(round((random(dispatchID.y + TimeElapsed + i * 29.7781982115) - 0.5) * range));
+                int y = int(round((random(dispatchID.y + TimeElapsed - i * 29.7781982115) - 0.5) * range));
                 float2 sampleLocation = dispatchID.xy + float2(x, y);
                 if (uint(readTexture[sampleLocation]) == next_state) {
                     search_results_found += 1;
@@ -77,8 +77,9 @@ void main(uint3 dispatchID : SV_DispatchThreadID) {
         final_result += 1;
     }
     float2 Mouse = float2(MousePosX, MousePosY);
-    if (distance(Mouse, dispatchID.xy) < 75.0) {
+    // if (distance(Mouse, dispatchID.xy) < 75.0) {
     // if (abs(Mouse.x - dispatchID.x) + abs(Mouse.y - dispatchID.y) < 75.0) {
+    if (abs(Mouse.x - dispatchID.x) < 50.0 && abs(Mouse.y - dispatchID.y) < 50.0) {
         // final_result += 1;
         final_result = 0;
     }
